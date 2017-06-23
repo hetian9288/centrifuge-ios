@@ -8,6 +8,7 @@
 
 import IDZSwiftCommonCrypto
 
+public let CentrifugeAuthErrorDomain = "com.Centrifuge.error.domain.auth"
 public let CentrifugeErrorDomain = "com.Centrifuge.error.domain"
 public let CentrifugeWebSocketErrorDomain = "com.Centrifuge.error.domain.websocket"
 public let CentrifugeErrorMessageKey = "com.Centrifuge.error.messagekey"
@@ -19,13 +20,22 @@ public enum CentrifugeErrorCode: Int {
 public typealias CentrifugeMessageHandler = (CentrifugeServerMessage?, NSError?) -> Void
 
 public class Centrifuge {
+    
+    static let privateChannelPrefix = "$"
+    
+    @available(*, deprecated, message: "Use method with CentrifugeConfig instead")
     public class func client(url: String, creds: CentrifugeCredentials, delegate: CentrifugeClientDelegate) -> CentrifugeClient {
+        let conf = CentrifugeConfig(url: url)
+        
+        return client(conf: conf, creds: creds, delegate: delegate)
+    }
+    
+    public class func client(conf: CentrifugeConfig, creds: CentrifugeCredentials, delegate: CentrifugeClientDelegate) -> CentrifugeClient {
         let client = CentrifugeClientImpl()
         client.builder = CentrifugeClientMessageBuilderImpl()
         client.parser = CentrifugeServerMessageParserImpl()
         client.creds = creds
-        client.url = url
-        // TODO: Check references cycle
+        client.conf = conf
         client.delegate = delegate
         
         return client

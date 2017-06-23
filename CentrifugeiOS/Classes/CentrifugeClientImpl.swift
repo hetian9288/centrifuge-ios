@@ -12,12 +12,14 @@ typealias CentrifugeBlockingHandler = ([CentrifugeServerMessage]?, NSError?) -> 
 
 class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
     var ws: CentrifugeWebSocket!
-    var url: String!
     var creds: CentrifugeCredentials!
+    var conf: CentrifugeConfig!
     var builder: CentrifugeClientMessageBuilder!
     var parser: CentrifugeServerMessageParser!
     
-    weak var delegate: CentrifugeClientDelegate?
+    var clientId: String?
+    
+    weak var delegate: CentrifugeClientDelegate!
     
     var messageCallbacks = [String : CentrifugeMessageHandler]()
     var subscription = [String : CentrifugeChannelDelegate]()
@@ -27,12 +29,15 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
     var blockingHandler: CentrifugeBlockingHandler?
     var connectionCompletion: CentrifugeMessageHandler?
     
+    private var isAuthBatching = false
+    private var channelsForAuth: [String: CentrifugeMessageHandler] = [:]
+    
     //MARK: - Public interface
     //MARK: Server related method
     func connect(withCompletion completion: @escaping CentrifugeMessageHandler) {
         blockingHandler = connectionProcessHandler
         connectionCompletion = completion
-        ws = CentrifugeWebSocket(url)
+        ws = CentrifugeWebSocket(conf.url)
         ws.delegate = self
     }
     
@@ -49,10 +54,15 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
     
     //MARK: Channel related method
     func subscribe(toChannel channel: String, delegate: CentrifugeChannelDelegate, completion: @escaping CentrifugeMessageHandler) {
-        let message = builder.buildSubscribeMessageTo(channel: channel)
-        subscription[channel] = delegate
-        messageCallbacks[message.uid] = completion
-        send(message: message)
+        if channel.hasPrefix(Centrifuge.privateChannelPrefix) {
+            subscription[channel] = delegate
+            authChanel(chanel: channel, handler: completion)
+        } else {
+            let message = builder.buildSubscribeMessageTo(channel: channel)
+            subscription[channel] = delegate
+            messageCallbacks[message.uid] = completion
+            send(message: message)
+        }
     }
 
     func subscribe(toChannel channel: String, delegate: CentrifugeChannelDelegate, lastMessageUID uid: String, completion: @escaping CentrifugeMessageHandler) {
@@ -84,6 +94,16 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
         let message = builder.buildHistoryMessage(channel: channel)
         messageCallbacks[message.uid] = completion
         send(message: message)
+    }
+    
+    func startAuthBatching() {
+        isAuthBatching = true
+    }
+    
+    func stopAuthBatching() {
+        isAuthBatching = false
+        
+        authChannels()
     }
     
     //MARK: - Helpers
@@ -129,7 +149,8 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
             return
         }
         
-        if message.error == nil{
+        if message.error == nil {
+            clientId = message.body?["client"] as? String
             setupConnectedState()
             handler(message, nil)
         } else {
@@ -249,6 +270,100 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
         if let handler = blockingHandler {
             handler(nil, error)
         }
+    }
+    
+    //MARK: - Authorization
+    
+    func authChanel(chanel: String, handler: @escaping CentrifugeMessageHandler) {
+        if chanel.characters.count < 2 {
+            return
+        }
+        if !chanel.hasPrefix(Centrifuge.privateChannelPrefix) {
+            return
+        }
+        
+        channelsForAuth[chanel] = handler
+        
+        if isAuthBatching == false {
+            stopAuthBatching()
+        }
+    }
+    
+    private func authChannels() {
+        guard self.channelsForAuth.count > 0, let clientId = clientId, let url = URL(string: conf.authEndpoint) else {
+            return
+        }
+        let channelsForAuth = self.channelsForAuth
+        self.channelsForAuth = [:]
+        
+        let json: [String: Any] = [
+            "client": clientId,
+            "channels": channelsForAuth.map { (chanel, _) in chanel }
+        ]
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let authHeaders = conf.authHeaders {
+            for (field, value) in authHeaders {
+                request.setValue(value, forHTTPHeaderField: field)
+            }
+        }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: json)
+            request.httpBody = data
+        } catch {
+            return
+        }
+        
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let sself = self else {
+                return
+            }
+            guard let data = data, error == nil else {
+                channelsForAuth.forEach { (channel, handler) in
+                    sself.subscription[channel] = nil
+                    handler(nil, error as NSError?)
+                }
+                return
+            }
+            
+            if let httpStatus = response as? HTTPURLResponse, httpStatus.statusCode != 200 {
+                let error = NSError(domain: CentrifugeAuthErrorDomain, code: 0, userInfo: ["data" : data, NSLocalizedDescriptionKey: "Server error: \(httpStatus.statusCode)"])
+                channelsForAuth.forEach { (channel, handler) in
+                    sself.subscription[channel] = nil
+                    handler(nil, error)
+                }
+                return
+            }
+            
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                let error = NSError(domain: CentrifugeAuthErrorDomain, code: 1, userInfo: ["data" : data, NSLocalizedDescriptionKey: "Cannot parse json"])
+                channelsForAuth.forEach { (channel, handler) in
+                    sself.subscription[channel] = nil
+                    handler(nil, error)
+                }
+                return
+            }
+            
+            for (channel, handler) in channelsForAuth {
+                guard let channelData = json?[channel] as? [String: Any],
+                    let sign = channelData["sign"] as? String else {
+                        let error = NSError(domain: CentrifugeAuthErrorDomain, code: 2, userInfo: ["data" : data, NSLocalizedDescriptionKey: "Channel not found in authorization response"])
+                        channelsForAuth.forEach { (channel, handler) in
+                            sself.subscription[channel] = nil
+                            handler(nil, error)
+                        }
+                        continue
+                }
+                
+                let info = channelData["info"]
+                let message = sself.builder.buildSubscribeMessageTo(channel: channel, clientId: clientId, info: info, sign: sign)
+                sself.messageCallbacks[message.uid] = handler
+                sself.send(message: message)
+            }
+        }
+        task.resume()
     }
 }
 

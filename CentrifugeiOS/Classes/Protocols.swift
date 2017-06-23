@@ -20,6 +20,7 @@ public protocol CentrifugeChannelDelegate {
 }
 
 public protocol CentrifugeClient {
+    var clientId: String? { get }
     //MARK: General methods
     func connect(withCompletion: @escaping CentrifugeMessageHandler)
     func disconnect()

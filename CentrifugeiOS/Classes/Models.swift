@@ -50,6 +50,18 @@ public struct CentrifugeCredentials {
     }
 }
 
+public struct CentrifugeConfig {
+    let url: String
+    let authEndpoint: String
+    let authHeaders: [String:String]?
+    
+    public init(url: String, authEndpoint: String = "/centrifuge/auth/", authHeaders: [String:String]? = nil) {
+        self.url = url
+        self.authEndpoint = authEndpoint
+        self.authHeaders = authHeaders
+    }
+}
+
 public enum CentrifugeMethod : String {
     case Connect = "connect"
     case Disconnect = "disconnect"

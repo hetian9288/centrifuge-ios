@@ -11,6 +11,7 @@ protocol CentrifugeClientMessageBuilder {
     func buildConnectMessage(credentials: CentrifugeCredentials) -> CentrifugeClientMessage
     func buildDisconnectMessage() -> CentrifugeClientMessage
     func buildSubscribeMessageTo(channel: String) -> CentrifugeClientMessage
+    func buildSubscribeMessageTo(channel: String, clientId: String, info: Any?, sign: String) -> CentrifugeClientMessage
     func buildSubscribeMessageTo(channel: String, lastMessageUUID: String) -> CentrifugeClientMessage
     func buildUnsubscribeMessageFrom(channel: String) -> CentrifugeClientMessage
     func buildPresenceMessage(channel: String) -> CentrifugeClientMessage
@@ -42,6 +43,16 @@ class CentrifugeClientMessageBuilderImpl: CentrifugeClientMessageBuilder {
     
     func buildSubscribeMessageTo(channel: String) -> CentrifugeClientMessage {
         let params = ["channel" : channel]
+        return buildMessage(method: .Subscribe, params: params)
+    }
+    
+    func buildSubscribeMessageTo(channel: String, clientId: String, info: Any?, sign: String) -> CentrifugeClientMessage {
+        var params: [String: Any] = ["channel" : channel,
+                                     "client" : clientId,
+                                     "sign" : sign]
+        if let info = info {
+            params["info"] = info
+        }
         return buildMessage(method: .Subscribe, params: params)
     }
     
