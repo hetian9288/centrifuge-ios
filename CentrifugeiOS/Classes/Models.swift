@@ -52,11 +52,13 @@ public struct CentrifugeCredentials {
 
 public struct CentrifugeConfig {
     let url: String
+    let secret: String
     let authEndpoint: String
     let authHeaders: [String:String]?
     
-    public init(url: String, authEndpoint: String = "/centrifuge/auth/", authHeaders: [String:String]? = nil) {
+    public init(url: String, secret: String, authEndpoint: String = "/centrifuge/auth/", authHeaders: [String:String]? = nil) {
         self.url = url
+        self.secret = secret
         self.authEndpoint = authEndpoint
         self.authHeaders = authHeaders
     }
