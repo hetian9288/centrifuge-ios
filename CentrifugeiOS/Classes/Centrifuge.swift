@@ -24,8 +24,8 @@ public class Centrifuge {
     static let privateChannelPrefix = "$"
     
     @available(*, deprecated, message: "Use method with CentrifugeConfig instead")
-    public class func client(url: String, creds: CentrifugeCredentials, delegate: CentrifugeClientDelegate) -> CentrifugeClient {
-        let conf = CentrifugeConfig(url: url)
+    public class func client(url: String, secret: String, creds: CentrifugeCredentials, delegate: CentrifugeClientDelegate) -> CentrifugeClient {
+        let conf = CentrifugeConfig(url: url, secret: secret)
         
         return client(conf: conf, creds: creds, delegate: delegate)
     }
