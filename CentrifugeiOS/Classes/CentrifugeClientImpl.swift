@@ -297,6 +297,7 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
         self.channelsForAuth = [:]
         
         let json: [String: Any] = [
+            "secret": conf.secret,
             "client": clientId,
             "channels": channelsForAuth.map { (chanel, _) in chanel }
         ]
