@@ -66,10 +66,15 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
     }
 
     func subscribe(toChannel channel: String, delegate: CentrifugeChannelDelegate, lastMessageUID uid: String, completion: @escaping CentrifugeMessageHandler) {
-        let message = builder.buildSubscribeMessageTo(channel: channel, lastMessageUUID: uid)
-        subscription[channel] = delegate
-        messageCallbacks[message.uid] = completion
-        send(message: message)
+        if channel.hasPrefix(Centrifuge.privateChannelPrefix) {
+            subscription[channel] = delegate
+            authChanel(chanel: channel, handler: completion)
+        } else {
+            let message = builder.buildSubscribeMessageTo(channel: channel, lastMessageUUID: uid)
+            subscription[channel] = delegate
+            messageCallbacks[message.uid] = completion
+            send(message: message)
+        }
     }
     
     func publish(toChannel channel: String, data: [String : Any], completion: @escaping CentrifugeMessageHandler) {
@@ -133,7 +138,7 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
      */
     func connectionProcessHandler(messages: [CentrifugeServerMessage]?, error: NSError?) -> Void {
         guard let handler = connectionCompletion else {
-            assertionFailure("Error: No connectionCompletion")
+            print("Error: No connectionCompletion")
             return
         }
         
@@ -145,7 +150,8 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
         }
         
         guard let message = messages?.first else {
-            assertionFailure("Error: Empty messages array")
+            print("Error: Empty messages array")
+//            print("%@", "Error: Empty messages array without error")
             return
         }
         
@@ -169,7 +175,8 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
         }
         
         guard let msgs = messages else {
-            assertionFailure("Error: Empty messages array without error")
+            print("Error: Empty messages array without error")
+//            NSLog("%@", "Error: Empty messages array without error")
             return
         }
         
@@ -181,7 +188,7 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
     func defaultProcessHandler(message: CentrifugeServerMessage) {
         var handled = false
         if let uid = message.uid, messageCallbacks[uid] == nil {
-            assertionFailure("Error: Untracked message is received")
+            print("Error: Untracked message is received")
             return
         }
         
@@ -207,25 +214,25 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
         // Channel events
         case .Message:
             guard let channel = message.body?["channel"] as? String, let delegate = subscription[channel] else {
-                assertionFailure("Error: Invalid \(message.method) handler")
+                print("Error: Invalid \(message.method) handler")
                 return
             }
             delegate.client(self, didReceiveMessageInChannel: channel, message: message)
         case .Join:
             guard let channel = message.body?["channel"] as? String, let delegate = subscription[channel] else {
-                assertionFailure("Error: Invalid \(message.method) handler")
+                print("Error: Invalid \(message.method) handler")
                 return
             }
             delegate.client(self, didReceiveJoinInChannel: channel, message: message)
         case .Leave:
             guard let channel = message.body?["channel"] as? String, let delegate = subscription[channel] else {
-                assertionFailure("Error: Invalid \(message.method) handler")
+                print("Error: Invalid \(message.method) handler")
                 return
             }
             delegate.client(self, didReceiveLeaveInChannel: channel, message: message)
         case .Unsubscribe:
             guard let channel = message.body?["channel"] as? String, let delegate = subscription[channel] else {
-                assertionFailure("Error: Invalid \(message.method) handler")
+                print("Error: Invalid \(message.method) handler")
                 return
             }
             delegate.client(self, didReceiveUnsubscribeInChannel: channel, message: message)
@@ -239,7 +246,7 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
         case .Refresh:
             delegate?.client(self, didReceiveRefresh: message)
         default:
-            assertionFailure("Error: Invalid method type")
+            print("Error: Invalid method type")
         }
     }
     
@@ -252,7 +259,6 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
     func webSocketMessageText(_ text: String) {
         let data = text.data(using: String.Encoding.utf8)!
         let messages = try! parser.parse(data: data)
-
         if let handler = blockingHandler {
             handler(messages, nil)
         }
@@ -337,7 +343,6 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
                 }
                 return
             }
-            
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 let error = NSError(domain: CentrifugeAuthErrorDomain, code: 1, userInfo: ["data" : data, NSLocalizedDescriptionKey: "Cannot parse json"])
                 channelsForAuth.forEach { (channel, handler) in
@@ -358,7 +363,7 @@ class CentrifugeClientImpl: NSObject, WebSocketDelegate, CentrifugeClient {
                         continue
                 }
                 
-                let info = channelData["info"]
+                let info = channelData["info"] as! String;
                 let message = sself.builder.buildSubscribeMessageTo(channel: channel, clientId: clientId, info: info, sign: sign)
                 sself.messageCallbacks[message.uid] = handler
                 sself.send(message: message)
