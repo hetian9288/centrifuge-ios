@@ -11,10 +11,11 @@ protocol CentrifugeServerMessageParser {
 }
 
 class CentrifugeServerMessageParserImpl: CentrifugeServerMessageParser {
-    func parse(data: Data) throws -> [CentrifugeServerMessage] {        
+    
+    func parse(data: Data) throws -> [CentrifugeServerMessage] {
+        var messages = [CentrifugeServerMessage]()
         do {
             let response = try JSONSerialization.jsonObject(with: data, options: JSONSerialization.ReadingOptions())
-            var messages = [CentrifugeServerMessage]()
             
             if let infos = response as? [[String : AnyObject]] {
                 for info in infos {
@@ -23,20 +24,15 @@ class CentrifugeServerMessageParserImpl: CentrifugeServerMessageParser {
                     }
                 }
             }
-            
             if let info = response as? [String : AnyObject] {
                 if let message = messageParse(info: info){
                     messages.append(message)
                 }
             }
-            
-            return messages
-            
-        }catch {
-            //TODO: add error thrown
-            assertionFailure("Error: Invalid message json")
-            return []
+        } catch {
+            print("Error: Json消息解析失败")
         }
+        return messages
     }
     
     func messageParse(info: [String : AnyObject]) -> CentrifugeServerMessage? {

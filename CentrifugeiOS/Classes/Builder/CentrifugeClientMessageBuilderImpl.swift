@@ -49,6 +49,7 @@ class CentrifugeClientMessageBuilderImpl: CentrifugeClientMessageBuilder {
     func buildSubscribeMessageTo(channel: String, clientId: String, info: Any?, sign: String) -> CentrifugeClientMessage {
         var params: [String: Any] = ["channel" : channel,
                                      "client" : clientId,
+                                     "recover" : true,
                                      "sign" : sign]
         if let info = info {
             params["info"] = info
